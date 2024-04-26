@@ -7,17 +7,18 @@ from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 
-class SimpleNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_classes):
-        super(SimpleNN, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, num_classes)
+class SimpleRNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
+        super(SimpleRNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
-        out = self.fc1(x)
-        out = self.relu(out)
-        out = self.fc2(out)
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+        out, _ = self.rnn(x, h0)
+        out = self.fc(out[:, -1, :])
         return out
 
 def calculate_accuracy(y_pred, y_true):
@@ -55,19 +56,19 @@ y_val = val_df['label'].values
 # 对验证集进行标准化
 X_val = scaler.transform(X_val)
 
-X_train = torch.tensor(X_train, dtype=torch.float32)
+X_train = torch.tensor(X_train, dtype=torch.float32).unsqueeze(2)
 y_train = torch.tensor(y_train, dtype=torch.long)
-X_val = torch.tensor(X_val, dtype=torch.float32)
+X_val = torch.tensor(X_val, dtype=torch.float32).unsqueeze(2)
 y_val = torch.tensor(y_val, dtype=torch.long)
-X_test = torch.tensor(X_test, dtype=torch.float32)
+X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(2)
 y_test = torch.tensor(y_test, dtype=torch.long)
 
 train_dataset = TensorDataset(X_train, y_train)
 train_loader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True)
 
-model = SimpleNN(input_size=6, hidden_size=10, num_classes=4)
+model = SimpleRNN(input_size=1, hidden_size=10, num_layers=2, num_classes=4)
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.01)
+optimizer = optim.Adam(model.parameters(), lr=0.005)
 
 train_accuracies = []
 test_accuracies = []
@@ -99,7 +100,6 @@ for epoch in range(epochs):
 
     print(f'Epoch {epoch + 1}, Train Acc: {train_accuracy * 100:.2f}%, Val Acc: {val_accuracy * 100:.2f}%, Test Acc: {test_accuracy * 100:.2f}%')
 
-    # scheduler.step(val_accuracy)
 plt.plot(range(1, len(train_accuracies) + 1), train_accuracies, label='Train Acc')
 plt.plot(range(1, len(val_accuracies) + 1), val_accuracies, label='Val Acc')
 plt.plot(range(1, len(test_accuracies) + 1), test_accuracies, label='Test Acc')
@@ -110,7 +110,7 @@ plt.legend()
 plt.show()
 
 # 指定模型保存的路径
-model_path = 'trained_model.pth'
+model_path = 'trained_rnn_model.pth'
 
 # 保存模型的状态字典
 torch.save(model.state_dict(), model_path)

@@ -8,38 +8,36 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-# 定义一个改进的神经网络模型
-class ImprovedNN(nn.Module):
-    def __init__(self, input_size, hidden_sizes, num_classes, dropout_prob=0.5):
-        super(ImprovedNN, self).__init__()
-        self.hidden_layers = nn.ModuleList()
-        self.hidden_layers.append(nn.Linear(input_size, hidden_sizes[0]))  # 第一个隐藏层
-        self.hidden_layers.append(nn.BatchNorm1d(hidden_sizes[0]))  # 第一个隐藏层后的批归一化层
-
-        # 添加剩余的隐藏层和对应的批归一化层
-        for i in range(1, len(hidden_sizes)):
-            self.hidden_layers.append(nn.Linear(hidden_sizes[i - 1], hidden_sizes[i]))
-            self.hidden_layers.append(nn.BatchNorm1d(hidden_sizes[i]))
-
-        self.output_layer = nn.Linear(hidden_sizes[-1], num_classes)  # 输出层
-        self.relu = nn.ReLU()  # ReLU激活函数
-        self.dropout = nn.Dropout(dropout_prob)  # Dropout层,用于正则化
+# 定义一个基于RNN的神经网络模型
+# 定义一个基于RNN的神经网络模型
+# 定义一个更深的RNN神经网络模型
+class ImprovedRNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes, dropout_prob=0.5):
+        super(ImprovedRNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.rnn1 = nn.RNN(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout_prob)
+        self.rnn2 = nn.RNN(hidden_size, hidden_size, num_layers, batch_first=True, dropout=dropout_prob)
+        self.fc1 = nn.Linear(hidden_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, num_classes)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout_prob)
 
     def forward(self, x):
-        # 前向传播过程,依次经过隐藏层、批归一化层、ReLU激活和Dropout
-        for i in range(0, len(self.hidden_layers), 2):
-            x = self.relu(self.hidden_layers[i](x))
-            x = self.hidden_layers[i + 1](x)
-            x = self.dropout(x)
-        x = self.output_layer(x)  # 最后通过输出层得到预测结果
-        return x
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        out, _ = self.rnn1(x, h0)
+        out, _ = self.rnn2(out, h0)
+        out = self.relu(self.fc1(out[:, -1, :]))
+        out = self.dropout(out)
+        out = self.fc2(out)
+        return out
 
-# 计算模型的准确率
 def calculate_accuracy(y_pred, y_true):
     _, predicted = torch.max(y_pred.data, 1)  # 获取预测结果中概率最大的类别
     total = y_true.size(0)  # 样本总数
     correct = (predicted == y_true).sum().item()  # 预测正确的样本数
     return correct / total  # 返回准确率
+
 
 # 加载数据并进行预处理
 df = pd.read_csv('dataset/car_1000.txt', names=['buying', 'maint', 'doors', 'persons', 'lug_boot', 'safety', 'label'])
@@ -77,11 +75,11 @@ y_val = val_df['label'].values  # 提取验证集的标签值
 X_val = scaler.transform(X_val)
 
 # 将数据转换为PyTorch的Tensor格式
-X_train = torch.tensor(X_train, dtype=torch.float32)
+X_train = torch.tensor(X_train, dtype=torch.float32).unsqueeze(1)
 y_train = torch.tensor(y_train, dtype=torch.long)
-X_val = torch.tensor(X_val, dtype=torch.float32)
+X_val = torch.tensor(X_val, dtype=torch.float32).unsqueeze(1)
 y_val = torch.tensor(y_val, dtype=torch.long)
-X_test = torch.tensor(X_test, dtype=torch.float32)
+X_test = torch.tensor(X_test, dtype=torch.float32).unsqueeze(1)
 y_test = torch.tensor(y_test, dtype=torch.long)
 
 # 创建训练集的DataLoader
@@ -89,18 +87,17 @@ train_dataset = TensorDataset(X_train, y_train)
 train_loader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True)
 
 # 初始化模型、损失函数、优化器和学习率调度器
-model = ImprovedNN(input_size=6, hidden_sizes=[256, 128, 64, 32], num_classes=4, dropout_prob=0.4)
+model = ImprovedRNN(input_size=6, hidden_size=128, num_layers=3, num_classes=4, dropout_prob=0.4)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.01)
 scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, verbose=True)
-
 # 训练和评估模型
 train_accuracies = []  # 存储训练集准确率
 val_accuracies = []  # 存储验证集准确率
 test_accuracies = []  # 存储测试集准确率
 epochs = 200  # 训练轮数
 best_val_acc = 0  # 最佳验证集准确率
-patience = 50  # early stopping的耐心值
+patience = 20  # early stopping的耐心值
 counter = 0  # early stopping的计数器
 
 for epoch in range(epochs):
@@ -151,8 +148,7 @@ plt.ylabel('Accuracy')
 plt.title('Accuracy over Epochs')
 plt.legend()
 plt.show()
-
-# 保存改进后的模型
-model_path = 'improved_model.pth'
+# 保存改进后的RNN模型
+model_path = 'improved_rnn_model.pth'
 torch.save(model.state_dict(), model_path)
-print(f'Improved model saved to {model_path}')
+print(f'Improved RNN model saved to {model_path}')
